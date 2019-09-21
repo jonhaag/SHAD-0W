@@ -40,7 +40,7 @@ int steeringNeutral = 90;        // Move this by one or two to set the center po
 int steeringRightEndpoint = 120; // Move this down (below 180) if you need to set a narrower Right turning radius
 int steeringLeftEndpoint = 0;    // Move this up (above 0) if you need to set a narrower Left turning radius
 
-int driveNeutral = 91;           // Move this by one or two to set the center point for the drive ESC
+int driveNeutral = 0;           // Move this by one or two to set the center point for the drive ESC
 int maxForwardSpeed = 175;       // Move this down (below 180, but above 90) if you need a slower forward speed
 int maxReverseSpeed = 65;        // Move this up (above 0, but below 90) if you need a slower reverse speed
 
@@ -54,7 +54,7 @@ int maxReverseSpeed = 65;        // Move this up (above 0, but below 90) if you 
 
 #define steeringPin 4            // connect this pin to steering servo for MSE (R/C mode)
 #define drivePin 3               // connect this pin to ESC for forward/reverse drive (R/C mode)
-#define L2Throttle               // comment this to use Joystick throttle (instead of L2 throttle)
+// #define L2Throttle               // comment this to use Joystick throttle (instead of L2 throttle)
 
 // ---------------------------------------------------------------------------------------
 //                          Sound Control Settings
@@ -118,6 +118,13 @@ boolean isStickEnabled = true;
 byte action = 0;
 unsigned long DriveMillis = 0;
 
+// called this way, it uses the default address 0x40
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+// you can also call it with a different address you want
+// Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x41);
+// you can also call it with a different address and I2C interface
+// Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(&Wire, 0x40);
+
 int Wheel1;
 int Wheel2;
 
@@ -159,11 +166,11 @@ void setup()
 
   pwm.begin();
   pwm.setPWMFreq(60);  // Analog servos run at ~60 Hz updates
-  Serial.print(F("\r\nPWM started");
+  Serial.print(F("\r\nPWM started"));
    
   Serial.print(F("\r\nD-0 Drive Running"));
-  steeringSignal.attach(steeringPin);
-  driveSignal.attach(drivePin);
+//  steeringSignal.attach(steeringPin);
+//  driveSignal.attach(drivePin);
 }
 
 boolean readUSB()
@@ -179,6 +186,22 @@ boolean readUSB()
     return false;
   }
   return true;
+}
+
+void setServoPulse(uint8_t n, double pulse) {
+  double pulselength;
+  
+  pulselength = 1000000;   // 1,000,000 us per second
+  pulselength /= 60;   // 60 Hz
+  Serial.print(pulselength); Serial.println(" us per period"); 
+  pulselength /= 4096;  // 12 bits of resolution
+  Serial.print(pulselength); Serial.println(" us per bit"); 
+  pulse *= 1000000;  // convert to us
+  pulse /= pulselength;
+  Serial.println(pulse);
+  pwm.setPWM(n, 0, pulse);
+
+
 }
 
 void loop()
@@ -437,7 +460,7 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       } else if (myPS3->getAnalogButton(L2)) {
         // These values must cross 90 (as that is stopped)
         // The closer these values are the more speed control you get
-        driveValue = map(stickY, 0, 255, 90, maxForwardSpeed);
+        driveValue = map(stickY, 255, 0, 190, 500);
       }
       #else
       if (((stickX <= 128 - joystickDeadZoneRange) || (stickX >= 128 + joystickDeadZoneRange)) ||
@@ -449,7 +472,7 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
             #endif
             // These values must cross 90 (as that is stopped)
             // The closer these values are the more speed control you get
-            driveValue = map(stickY, 0, 255, maxForwardSpeed, maxReverseSpeed);
+            driveValue = map(stickY, 255, 0, 190, 500);
       } else {
         // stop all movement
         steeringValue = steeringNeutral;
@@ -457,8 +480,16 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       }
       #endif
 
-      driveSignal.write(driveValue);
-      steeringSignal.write(steeringValue);
+      Serial.print ("stickY: ");
+      Serial.print (stickY);
+      Serial.print ("driveValue: ");
+      Serial.print (driveValue);
+      Serial.print ("\r\n");
+      
+      pwm.setPWM(0, 0, driveValue);
+      //pwm.setPWM(1, 0, driveValue);
+      //driveSignal.write(driveValue);
+      //steeringSignal.write(steeringValue);
 
       return true; //we sent a drive command
     }
