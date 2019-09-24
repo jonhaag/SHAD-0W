@@ -40,13 +40,17 @@ int steeringNeutral = 90;        // Move this by one or two to set the center po
 int steeringRightEndpoint = 120; // Move this down (below 180) if you need to set a narrower Right turning radius
 int steeringLeftEndpoint = 0;    // Move this up (above 0) if you need to set a narrower Left turning radius
 
-int driveNeutral = 0;           // Move this by one or two to set the center point for the drive ESC
+int driveNeutral = 0;            // Move this by one or two to set the center point for the drive ESC
 int maxForwardSpeed = 175;       // Move this down (below 180, but above 90) if you need a slower forward speed
 int maxReverseSpeed = 65;        // Move this up (above 0, but below 90) if you need a slower reverse speed
 
 //#define TEST_CONROLLER         //Support coming soon
 //#define SHADOW_DEBUG           //uncomment this for console DEBUG output
 #define SHADOW_VERBOSE           //uncomment this for console VERBOSE output
+
+int headNeutral = 330;
+#define HEAD_SERVO_MIN 140
+#define HEAD_SERVO_MAX 550
 
 // ---------------------------------------------------------------------------------------
 //                          Drive Controller Settings
@@ -130,7 +134,8 @@ int Wheel2;
 
 Servo steeringSignal;
 Servo driveSignal;
-int steeringValue, driveValue;   //will hold steering/drive values (-100 to 100)
+int steeringValue, driveValue1, driveValue2;   //will hold steering/drive values (-100 to 100)
+int headValue; //will hold head bar values
 int prevSteeringValue, prevDriveValue; //will hold steering/drive speed values (-100 to 100)
 
 
@@ -460,7 +465,9 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       } else if (myPS3->getAnalogButton(L2)) {
         // These values must cross 90 (as that is stopped)
         // The closer these values are the more speed control you get
-        driveValue = map(stickY, 255, 0, 190, 500);
+        driveValue1 = map(stickY, 255, 0, 190, 500);
+        driveValue2 = map(stickY, 255, 0, 500, 190);
+        headValue = map(stickY, 255, 0, 490, 275);
       }
       #else
       if (((stickX <= 128 - joystickDeadZoneRange) || (stickX >= 128 + joystickDeadZoneRange)) ||
@@ -472,22 +479,29 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
             #endif
             // These values must cross 90 (as that is stopped)
             // The closer these values are the more speed control you get
-            driveValue = map(stickY, 255, 0, 190, 500);
+            driveValue1 = map(stickY, 255, 0, 190, 500);
+            driveValue2 = map(stickY, 255, 0, 500, 190);
+            headValue = map(stickY, 0, 255, HEAD_SERVO_MIN, HEAD_SERVO_MAX);
       } else {
         // stop all movement
         steeringValue = steeringNeutral;
-        driveValue = driveNeutral;
+        driveValue1 = driveNeutral;
+        driveValue2 = driveNeutral;
+        headValue = headNeutral;
       }
       #endif
 
       Serial.print ("stickY: ");
       Serial.print (stickY);
-      Serial.print ("driveValue: ");
-      Serial.print (driveValue);
+//      Serial.print ("driveValue: ");
+//      Serial.print (driveValue1);
+      Serial.print (" headValue: ");
+      Serial.print (headValue);
       Serial.print ("\r\n");
       
-      pwm.setPWM(0, 0, driveValue);
-      //pwm.setPWM(1, 0, driveValue);
+      pwm.setPWM(0, 0, driveValue1);
+      pwm.setPWM(1, 0, driveValue2);
+      pwm.setPWM(2, 0, headValue);
       //driveSignal.write(driveValue);
       //steeringSignal.write(steeringValue);
 
