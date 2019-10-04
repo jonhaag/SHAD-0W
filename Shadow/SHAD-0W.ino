@@ -6,8 +6,8 @@
 // =======================================================================================
 //                 SHAD-0W :  Small Handheld Arduino D-0 Wand
 // =======================================================================================
-//                          Last Revised Date: 09/19/2019
-//                                Version: 0.1
+//                          Last Revised Date: 10/04/2019
+//                                Version: 0.2
 //                             Written By: jonhaag
 //               Inspired by the SHADOW by KnightShade & PADAWAN by danf
 //                            
