@@ -1,3 +1,8 @@
+
+
+
+
+
 // =======================================================================================
 //                 SHAD-0W :  Small Handheld Arduino D-0 Wand
 // =======================================================================================
@@ -34,13 +39,14 @@ String PS3MoveNavigatonPrimaryMAC = "04:76:6E:5A:9A:5B"; //If using multiple con
 
 byte joystickDeadZoneRange = 10;  // For controllers that centering problems, use the lowest number with no drift
 
-int steeringNeutral = 90;        // Move this by one or two to set the center point for the steering servo
+int steeringNeutral = 0;        // Move this by one or two to set the center point for the steering servo
 
 #define reverseSteering          // Comment this to have normal stering direction (Lots of RC cars are built with reverseSteering by default)
-int steeringRightEndpoint = 120; // Move this down (below 180) if you need to set a narrower Right turning radius
-int steeringLeftEndpoint = 0;    // Move this up (above 0) if you need to set a narrower Left turning radius
+int steeringRightEndpoint = 550; // Move this down (below 180) if you need to set a narrower Right turning radius
+int steeringLeftEndpoint = 140;    // Move this up (above 0) if you need to set a narrower Left turning radius
 
-int driveNeutral = 0;            // Move this by one or two to set the center point for the drive ESC
+int drive1Neutral = 330;
+int drive2Neutral = 325; // Move this by one or two to set the center point for the drive ESC
 int maxForwardSpeed = 175;       // Move this down (below 180, but above 90) if you need a slower forward speed
 int maxReverseSpeed = 65;        // Move this up (above 0, but below 90) if you need a slower reverse speed
 
@@ -52,13 +58,6 @@ int headNeutral = 330;
 #define HEAD_SERVO_MIN 140
 #define HEAD_SERVO_MAX 550
 
-// ---------------------------------------------------------------------------------------
-//                          Drive Controller Settings
-// ---------------------------------------------------------------------------------------
-
-#define steeringPin 4            // connect this pin to steering servo for MSE (R/C mode)
-#define drivePin 3               // connect this pin to ESC for forward/reverse drive (R/C mode)
-// #define L2Throttle               // comment this to use Joystick throttle (instead of L2 throttle)
 
 // ---------------------------------------------------------------------------------------
 //                          Sound Control Settings
@@ -74,21 +73,20 @@ int headNeutral = 330;
 //                          Libraries
 // ---------------------------------------------------------------------------------------
 #include <PS3BT.h>
-#include <Servo.h>
+
+#include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
+#include <Servos.h>
 
-#ifdef Sparkfun
-#include <MP3Trigger.h>
-#include <SoftwareSerial.h>
-SoftwareSerial swSerial = SoftwareSerial(MP3RxPin, MP3TxPin);
-MP3Trigger MP3;
-#endif
+
 
 
 // ---------------------------------------------------------------------------------------
 //                          Variables
 // ---------------------------------------------------------------------------------------
+
+Servos servos(0x40);
 
 long previousMillis = millis();
 long currentMillis = millis();
@@ -132,11 +130,27 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 int Wheel1;
 int Wheel2;
 
-Servo steeringSignal;
-Servo driveSignal;
-int steeringValue, driveValue1, driveValue2;   //will hold steering/drive values (-100 to 100)
+int16_t WheelServo1; //LeftWheel
+int16_t WheelServo2; //RightWheel
+
+int Targetspeed1 = 0; //variable to store target speed
+int Targetspeed2 = 0; //variable to store target speed
+int CurrentWheel1;  // variable to store current speed for wheel 1
+int CurrentWheel2;  // variable to store current speed for wheel 2
+int SpeedChange = 5;  // variable to store speed step change (lower, more lag / smoother)
+int DrivePeriod = 10; //increase speed every x milliseconds, (higher, more lag / smoother)
+unsigned long Drivetime_now = 0; // Drivetime current, 
+int DirectionState = 0; // 0 for Stationary, 1 for forward, 2 for backwards
+int SteerState = 0; // 0 for Stationary, 1 for left, 2 for right
 int headValue; //will hold head bar values
-int prevSteeringValue, prevDriveValue; //will hold steering/drive speed values (-100 to 100)
+
+int Wheel1pos = 0;    // variable to store the Wheel1 speed 
+int Wheel2pos = 0;    // variable to store the Wheel2 speed
+float Steerpos = 0; //Variable to adjust the steering
+float Steeradjust = 0;
+
+int steeringValue;   //will hold steering/drive values (-100 to 100) OLD
+int prevSteeringValue, prevDriveValue; //will hold steering/drive speed values (-100 to 100) OLD
 
 
 // =======================================================================================
@@ -176,6 +190,8 @@ void setup()
   Serial.print(F("\r\nD-0 Drive Running"));
 //  steeringSignal.attach(steeringPin);
 //  driveSignal.attach(drivePin);
+
+
 }
 
 boolean readUSB()
@@ -345,8 +361,8 @@ boolean criticalFaultDetect()
       output += "Shut downing motors, and watching for a new PS3 message\r\n";
 #endif
 
-      driveSignal.write(driveNeutral);
-      steeringSignal.write(steeringNeutral);
+//      driveSignal.write(driveNeutral);
+//      steeringSignal.write(steeringNeutral);
       isDriveMotorStopped = true;
       return true;
     }
@@ -403,8 +419,8 @@ boolean criticalFaultDetect()
     output += "Shuting downing motors, and watching for a new PS3 message\r\n";
 #endif
 
-    driveSignal.write(driveNeutral);
-    steeringSignal.write(steeringNeutral);
+//    driveSignal.write(driveNeutral);
+//    steeringSignal.write(steeringNeutral);
     isDriveMotorStopped = true;
     return true;
   }
@@ -427,84 +443,134 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       }
       #endif
 
-      driveSignal.write(driveNeutral);
-      steeringSignal.write(steeringNeutral);
+//      driveSignal.write(driveNeutral);
+//      steeringSignal.write(steeringNeutral);
       isDriveMotorStopped = true;
       
     } else if (!myPS3->PS3NavigationConnected) {
-      driveSignal.write(driveNeutral);
-      steeringSignal.write(steeringNeutral);
+//      driveSignal.write(driveNeutral);
+//      steeringSignal.write(steeringNeutral);
       isDriveMotorStopped = true;
 
     } else {
       int stickX = myPS3->getAnalogHat(LeftHatX);
-      #ifdef L2Throttle
-      int stickY = myPS3->getAnalogButton(L2);
-      #else
       int stickY = myPS3->getAnalogHat(LeftHatY);
-      #endif
 
-      #ifdef L2Throttle
-      // map the steering direction
-      if (((stickX <= 128 - joystickDeadZoneRange) || (stickX >= 128 + joystickDeadZoneRange))) {
-        #ifdef reverseSteering
-          steeringValue = map(stickX, 0, 255, steeringRightEndpoint, steeringLeftEndpoint);
-        #else
-          steeringValue = map(stickX, 0, 255, steeringLeftEndpoint, steeringRightEndpoint);
-        #endif
-      } else {
-        steeringValue = steeringNeutral;
-        driveValue = driveNeutral;
+
+      Steerpos = map(stickX, 0, 255, -155, 155);
+      Wheel1pos = map(stickY, 255, 0, 190, 500);
+      Wheel2pos = map(stickY, 255, 0, 500, 182);
+      headValue = map(stickY, 0, 255, HEAD_SERVO_MIN, HEAD_SERVO_MAX);
+
+
+      //Create Steeradjust / SteerState value
+      if (Steerpos > 3) {
+        SteerState =1;
+      }
+      else if (Steerpos <-3) {
+        SteerState =2;
+      }
+      else if (Steerpos >-3 && Steerpos <3){
+        SteerState = 0;
+      }
+      
+      Steeradjust = Steerpos / 155;
+      
+      if (Steeradjust <0){
+        Steeradjust = -Steeradjust;
+      
       }
 
-      // map the drive direction
-      if (myPS3->getButtonPress(L1) && myPS3->getAnalogButton(L2)) {
-        // These values must cross 90 (as that is stopped)
-        // The closer these values are the more speed control you get
-        driveValue = map(stickY, 0, 255, 90, maxReverseSpeed);
-      } else if (myPS3->getAnalogButton(L2)) {
-        // These values must cross 90 (as that is stopped)
-        // The closer these values are the more speed control you get
-        driveValue1 = map(stickY, 255, 0, 190, 500);
-        driveValue2 = map(stickY, 255, 0, 500, 190);
-        headValue = map(stickY, 255, 0, 490, 275);
+      //Ramp up / Ramp down
+
+      Targetspeed1 = Wheel1pos;
+      Targetspeed2 = Wheel2pos;
+
+      if(millis() > Drivetime_now + DrivePeriod){      
+        Drivetime_now = millis();      
+      if (Targetspeed1>CurrentWheel1) {
+        CurrentWheel1=CurrentWheel1+ SpeedChange;
+          }
+      else if (Targetspeed1<CurrentWheel1) {
+        CurrentWheel1 = CurrentWheel1 - SpeedChange;
+          }
+          if (Targetspeed2>CurrentWheel2) {
+            CurrentWheel2=CurrentWheel2+ SpeedChange;
+          }
+      else if (Targetspeed2<CurrentWheel2) {
+        CurrentWheel2 = CurrentWheel2 - SpeedChange;
+          }
       }
-      #else
-      if (((stickX <= 128 - joystickDeadZoneRange) || (stickX >= 128 + joystickDeadZoneRange)) ||
-          ((stickY <= 128 - joystickDeadZoneRange) || (stickY >= 128 + joystickDeadZoneRange))) {
-            #ifdef reverseSteering
-              steeringValue = map(stickX, 0, 255, steeringRightEndpoint, steeringLeftEndpoint);
-            #else
-              steeringValue = map(stickX, 0, 255, steeringLeftEndpoint, steeringRightEndpoint);
-            #endif
-            // These values must cross 90 (as that is stopped)
-            // The closer these values are the more speed control you get
-            driveValue1 = map(stickY, 255, 0, 190, 500);
-            driveValue2 = map(stickY, 255, 0, 500, 190);
-            headValue = map(stickY, 0, 255, HEAD_SERVO_MIN, HEAD_SERVO_MAX);
-      } else {
-        // stop all movement
-        steeringValue = steeringNeutral;
-        driveValue1 = driveNeutral;
-        driveValue2 = driveNeutral;
-        headValue = headNeutral;
+      WheelServo1 = CurrentWheel1;
+      WheelServo2 = CurrentWheel2;
+
+      //kill wheel movement if centred (stops creep). 
+      if (CurrentWheel1 > 325 && CurrentWheel1 < 350) {
+            WheelServo1 = 4096;     
+          }
+      if (CurrentWheel2 > 325 && CurrentWheel2 < 350) {
+            WheelServo2 = 4096;   
+          }
+      
+      
+      //Check directionstate and move head ready for movement. 
+      if (CurrentWheel1> 345 && CurrentWheel2<325) {
+        DirectionState=1;
+        //HeadServo1 = 275;
       }
-      #endif
+      else if (CurrentWheel1 < 325 && CurrentWheel2>345) {
+        DirectionState=2;
+        //HeadServo1 = 490;
+      }
+      else if (CurrentWheel1>325 && CurrentWheel1<350 && CurrentWheel2>325 && CurrentWheel2<350) {
+        DirectionState=0;
+      }
+      
+      //Steering modifier
+      
+      if (CurrentWheel1>325 && CurrentWheel1<350 && CurrentWheel2>325 && CurrentWheel2<350 && (Steerpos > 20 || Steerpos < 0)) {
+      
+      WheelServo1 = CurrentWheel1+(-Steerpos / 3);
+      WheelServo2 = CurrentWheel2+(-Steerpos / 3);
+        
+      }
+      
+      else if ((CurrentWheel1<325 || CurrentWheel1>348) && (CurrentWheel2<325 || CurrentWheel2>348)){
+      
+      
+        
+      }
+      
+      
+      //moving steering
+      
+      if (DirectionState ==1) {
+      
+      WheelServo1 = CurrentWheel1+(-Steerpos / 3);
+      WheelServo2 = CurrentWheel2+(-Steerpos / 3);
+        
+      }
+      
+      if (DirectionState ==2) {
+      
+      WheelServo1 = CurrentWheel1+(-Steerpos / 3);
+      WheelServo2 = CurrentWheel2+(-Steerpos / 3);
+        
+      }
 
       Serial.print ("stickY: ");
-      Serial.print (stickY);
-//      Serial.print ("driveValue: ");
-//      Serial.print (driveValue1);
-      Serial.print (" headValue: ");
-      Serial.print (headValue);
-      Serial.print ("\r\n");
-      
-      pwm.setPWM(0, 0, driveValue1);
-      pwm.setPWM(1, 0, driveValue2);
-      pwm.setPWM(2, 0, headValue);
-      //driveSignal.write(driveValue);
-      //steeringSignal.write(steeringValue);
-
+      Serial.print (stickY);      Serial.print ("stickX: ");
+      Serial.print (stickX);
+      Serial.print (" Steerpos: ");
+      Serial.print (Steerpos);
+      Serial.print (" WheelServo1: ");
+      Serial.print (WheelServo1);     
+      Serial.print (" WheelServo2: ");
+      Serial.print (WheelServo2);Serial.print ("\r\n"); 
+           
+      pwm.setPWM(0, 0, WheelServo1);
+      pwm.setPWM(1, 0, WheelServo2);
+      servos.moveTo(2, 10, headValue);
       return true; //we sent a drive command
     }
   }
