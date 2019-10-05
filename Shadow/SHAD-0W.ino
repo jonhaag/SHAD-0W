@@ -19,7 +19,7 @@
 //         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 //
 // =======================================================================================
-//   Note: You will need a Arduino Mega 2560 or Uno to run this sketch
+//   Note: You will need a Arduino Mega 2560 to run this sketch
 //
 //   This is written to be a UNIVERSAL Sketch - supporting multiple controller options
 //      - Single PS3 Move Navigation
@@ -41,31 +41,22 @@ byte joystickDeadZoneRange = 10;  // For controllers that centering problems, us
 
 int steeringNeutral = 0;        // Move this by one or two to set the center point for the steering servo
 
-#define reverseSteering          // Comment this to have normal stering direction (Lots of RC cars are built with reverseSteering by default)
-int steeringRightEndpoint = 550; // Move this down (below 180) if you need to set a narrower Right turning radius
-int steeringLeftEndpoint = 140;    // Move this up (above 0) if you need to set a narrower Left turning radius
-
 int drive1Neutral = 330;
 int drive2Neutral = 325; // Move this by one or two to set the center point for the drive ESC
-int maxForwardSpeed = 175;       // Move this down (below 180, but above 90) if you need a slower forward speed
-int maxReverseSpeed = 65;        // Move this up (above 0, but below 90) if you need a slower reverse speed
 
 //#define TEST_CONROLLER         //Support coming soon
 //#define SHADOW_DEBUG           //uncomment this for console DEBUG output
 #define SHADOW_VERBOSE           //uncomment this for console VERBOSE output
 
-int headNeutral = 330;
-#define HEAD_SERVO_MIN 140
-#define HEAD_SERVO_MAX 550
+const int headBarServoPin = 5;
+#define HEAD_BAR_SERVO_MIN 20
+#define HEAD_BAR_SERVO_MAX 160
 
 
 // ---------------------------------------------------------------------------------------
 //                          Sound Control Settings
 // ---------------------------------------------------------------------------------------
 
-//#define MP3TxPin 2               // connect this pin to the MP3 Trigger
-//#define MP3RxPin 8               // This pin isn't used by the sparkfun MP3 trigger, but is used by the MDFly
-//#define Sparkfun               // Use the sparkfun MP3 Trigger
 
 
 
@@ -73,20 +64,15 @@ int headNeutral = 330;
 //                          Libraries
 // ---------------------------------------------------------------------------------------
 #include <PS3BT.h>
-
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
-
-#include <Servos.h>
-
-
+#include <Servo.h>
+#include "ServoEaser.h"
 
 
 // ---------------------------------------------------------------------------------------
 //                          Variables
 // ---------------------------------------------------------------------------------------
-
-Servos servos(0x40);
 
 long previousMillis = millis();
 long currentMillis = millis();
@@ -127,6 +113,14 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 // you can also call it with a different address and I2C interface
 // Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(&Wire, 0x40);
 
+int servoFrameMillis = 20;
+
+Servo headBarServo; 
+  
+ServoEaser headBarServoEaser;
+
+unsigned long lastMillis;
+
 int Wheel1;
 int Wheel2;
 
@@ -135,8 +129,8 @@ int16_t WheelServo2; //RightWheel
 
 int Targetspeed1 = 0; //variable to store target speed
 int Targetspeed2 = 0; //variable to store target speed
-int CurrentWheel1;  // variable to store current speed for wheel 1
-int CurrentWheel2;  // variable to store current speed for wheel 2
+int CurrentWheel1 = 330;  // variable to store current speed for wheel 1
+int CurrentWheel2 = 340;  // variable to store current speed for wheel 2
 int SpeedChange = 5;  // variable to store speed step change (lower, more lag / smoother)
 int DrivePeriod = 10; //increase speed every x milliseconds, (higher, more lag / smoother)
 unsigned long Drivetime_now = 0; // Drivetime current, 
@@ -148,9 +142,6 @@ int Wheel1pos = 0;    // variable to store the Wheel1 speed
 int Wheel2pos = 0;    // variable to store the Wheel2 speed
 float Steerpos = 0; //Variable to adjust the steering
 float Steeradjust = 0;
-
-int steeringValue;   //will hold steering/drive values (-100 to 100) OLD
-int prevSteeringValue, prevDriveValue; //will hold steering/drive speed values (-100 to 100) OLD
 
 
 // =======================================================================================
@@ -174,15 +165,6 @@ void setup()
   PS3Nav->attachOnInit(onInitPS3); // onInit() is called upon a new connection - you can call the function whatever you like
   PS3Nav2->attachOnInit(onInitPS3Nav2);
 
-
-#ifdef Sparkfun
-  //Setup for SoftwareSerial/MP3 Trigger
-  MP3.setup(&swSerial);
-  swSerial.begin(MP3Trigger::serialRate());
-  MP3.setVolume(vol);
-  Serial.print(F("\r\nSparkfun MP3 Trigger Initialized"));
-#endif
-
   pwm.begin();
   pwm.setPWMFreq(60);  // Analog servos run at ~60 Hz updates
   Serial.print(F("\r\nPWM started"));
@@ -191,7 +173,11 @@ void setup()
 //  steeringSignal.attach(steeringPin);
 //  driveSignal.attach(drivePin);
 
+  headBarServo.attach(headBarServoPin);
 
+  headBarServoEaser.begin(headBarServo, servoFrameMillis);
+
+  headBarServoEaser.easeTo(90,2000);
 }
 
 boolean readUSB()
@@ -239,14 +225,17 @@ void loop()
     //We have a fault condition that we want to ensure that we do NOT process any controller data!!!
     return;
   }
+  
   Drive();
 
+  headBarServoEaser.update();
+  
   if ( !readUSB() )
   {
     //We have a fault condition that we want to ensure that we do NOT process any controller data!!!
     return;
   }
-
+  
   toggleSettings();
   soundControl();
   flushAndroidTerminal();
@@ -456,11 +445,10 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       int stickX = myPS3->getAnalogHat(LeftHatX);
       int stickY = myPS3->getAnalogHat(LeftHatY);
 
-
       Steerpos = map(stickX, 0, 255, -155, 155);
       Wheel1pos = map(stickY, 255, 0, 190, 500);
       Wheel2pos = map(stickY, 255, 0, 500, 182);
-      headValue = map(stickY, 0, 255, HEAD_SERVO_MIN, HEAD_SERVO_MAX);
+//      headValue = map(stickY, 0, 255, HEAD_BAR_SERVO_MIN, HEAD_BAR_SERVO_MAX);
 
 
       //Create Steeradjust / SteerState value
@@ -516,28 +504,29 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       //Check directionstate and move head ready for movement. 
       if (CurrentWheel1> 345 && CurrentWheel2<325) {
         DirectionState=1;
-        //HeadServo1 = 275;
+        headValue = 30;
       }
       else if (CurrentWheel1 < 325 && CurrentWheel2>345) {
         DirectionState=2;
-        //HeadServo1 = 490;
+        headValue = 140;
       }
       else if (CurrentWheel1>325 && CurrentWheel1<350 && CurrentWheel2>325 && CurrentWheel2<350) {
         DirectionState=0;
+        headValue = 90;
       }
       
       //Steering modifier
       
       if (CurrentWheel1>325 && CurrentWheel1<350 && CurrentWheel2>325 && CurrentWheel2<350 && (Steerpos > 20 || Steerpos < 0)) {
       
-      WheelServo1 = CurrentWheel1+(-Steerpos / 3);
-      WheelServo2 = CurrentWheel2+(-Steerpos / 3);
+        WheelServo1 = CurrentWheel1+(-Steerpos / 3);
+        WheelServo2 = CurrentWheel2+(-Steerpos / 3);
         
       }
       
       else if ((CurrentWheel1<325 || CurrentWheel1>348) && (CurrentWheel2<325 || CurrentWheel2>348)){
       
-      
+    
         
       }
       
@@ -558,19 +547,30 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
         
       }
 
-      Serial.print ("stickY: ");
-      Serial.print (stickY);      Serial.print ("stickX: ");
-      Serial.print (stickX);
-      Serial.print (" Steerpos: ");
-      Serial.print (Steerpos);
-      Serial.print (" WheelServo1: ");
-      Serial.print (WheelServo1);     
-      Serial.print (" WheelServo2: ");
-      Serial.print (WheelServo2);Serial.print ("\r\n"); 
-           
+//      Serial.print ("stickY: ");
+//      Serial.print (stickY);      Serial.print ("stickX: ");
+//      Serial.print (stickX);
+//      Serial.print (" Steerpos: ");
+//      Serial.print (Steerpos);
+//      Serial.print (" WheelServo1: ");
+//      Serial.print (WheelServo1);     
+//      Serial.print (" WheelServo2: ");
+//      Serial.print (WheelServo2); 
+
+        Serial.print(headValue);
+        Serial.print ("\r\n");
+
+
+      if (headBarServoEaser.hasArrived() ) {
+        lastMillis = millis();
+        headBarServoEaser.easeTo(headValue,1000); 
+      }
+         
+      
       pwm.setPWM(0, 0, WheelServo1);
       pwm.setPWM(1, 0, WheelServo2);
-      servos.moveTo(2, 10, headValue);
+
+//      servos.moveTo(2, 10, headValue);
       return true; //we sent a drive command
     }
   }
