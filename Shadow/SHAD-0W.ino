@@ -1,3 +1,5 @@
+
+
 // =======================================================================================
 //                 SHAD-0W :  Small Handheld Arduino D-0 Wand
 // =======================================================================================
@@ -65,6 +67,9 @@ const int headBarServoPin = 5;
 #include <Adafruit_PWMServoDriver.h>
 #include <Servo.h>
 #include "ServoEaser.h"
+#include <SPI.h>
+#include <Adafruit_VS1053.h>
+#include <SD.h>
 
 
 // ---------------------------------------------------------------------------------------
@@ -140,6 +145,22 @@ int Wheel2pos = 0;    // variable to store the Wheel2 speed
 float Steerpos = 0; //Variable to adjust the steering
 float Steeradjust = 0;
 
+// =======================================================================================
+//                          Music Maker Shield Setup
+// =======================================================================================
+
+#define SHIELD_RESET  -1      // VS1053 reset pin (unused!)
+#define SHIELD_CS     7      // VS1053 chip select pin (output)
+#define SHIELD_DCS    6      // VS1053 Data/command select pin (output)
+#define CARDCS 4     // Card chip select pin
+// DREQ should be an Int pin, see http://arduino.cc/en/Reference/attachInterrupt
+#define DREQ 3       // VS1053 Data request, ideally an Interrupt pin
+
+Adafruit_VS1053_FilePlayer musicPlayer = 
+  // create breakout-example object!
+  //Adafruit_VS1053_FilePlayer(BREAKOUT_RESET, BREAKOUT_CS, BREAKOUT_DCS, DREQ, CARDCS);
+  // create shield-example object!
+  Adafruit_VS1053_FilePlayer(SHIELD_RESET, SHIELD_CS, SHIELD_DCS, DREQ, CARDCS);
 
 // =======================================================================================
 //                          Main Program
@@ -162,18 +183,34 @@ void setup()
   PS3Nav->attachOnInit(onInitPS3); // onInit() is called upon a new connection - you can call the function whatever you like
   PS3Nav2->attachOnInit(onInitPS3Nav2);
 
+  //Startup Music Player
+  // initialise the music player
+  if (! musicPlayer.begin()) { // initialise the music player
+     Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
+     while (1);
+  }
+  Serial.println(F("VS1053 found"));
+
+    if (! musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
+    Serial.println(F("DREQ pin is not an interrupt pin"));
+  
+  musicPlayer.setVolume(60,60);
+  musicPlayer.sineTest(0x44, 500);    // Make a tone to indicate VS1053 is working
+    if (!SD.begin(CARDCS)) {
+    Serial.println(F("SD failed, or not present"));
+    while (1);  // don't do anything more
+  }
+  Serial.println("SD OK!");
+
   pwm.begin();
   pwm.setPWMFreq(60);  // Analog servos run at ~60 Hz updates
   Serial.print(F("\r\nPWM started"));
    
   Serial.print(F("\r\nD-0 Drive Running"));
-//  steeringSignal.attach(steeringPin);
-//  driveSignal.attach(drivePin);
 
+  //Initialize the Head Bar servo and move it into upright position if not already there
   headBarServo.attach(headBarServoPin);
-
   headBarServoEaser.begin(headBarServo, servoFrameMillis);
-
   headBarServoEaser.easeTo(90,2000);
 }
 
@@ -210,6 +247,7 @@ void setServoPulse(uint8_t n, double pulse) {
 
 void loop()
 {
+    
   //Useful to enable with serial console when having controller issues.
 #ifdef TEST_CONROLLER
   testPS3Controller();
@@ -222,11 +260,10 @@ void loop()
     //We have a fault condition that we want to ensure that we do NOT process any controller data!!!
     return;
   }
+  headBarServoEaser.update();
   
   Drive();
 
-  headBarServoEaser.update();
-  
   if ( !readUSB() )
   {
     //We have a fault condition that we want to ensure that we do NOT process any controller data!!!
@@ -344,11 +381,11 @@ boolean criticalFaultDetect()
     {
 #ifdef SHADOW_DEBUG
       output += "It has been 100ms since we heard from the PS3 Controller\r\n";
-      output += "Shut downing motors, and watching for a new PS3 message\r\n";
+      output += "Shutting down motors, and watching for a new PS3 message\r\n";
 #endif
 
-//      driveSignal.write(driveNeutral);
-//      steeringSignal.write(steeringNeutral);
+      WheelServo1 = 4096;
+      WheelServo2 = 4096; 
       isDriveMotorStopped = true;
       return true;
     }
@@ -405,8 +442,8 @@ boolean criticalFaultDetect()
     output += "Shuting downing motors, and watching for a new PS3 message\r\n";
 #endif
 
-//    driveSignal.write(driveNeutral);
-//    steeringSignal.write(steeringNeutral);
+    WheelServo1 = 4096;
+    WheelServo2 = 4096; 
     isDriveMotorStopped = true;
     return true;
   }
@@ -429,13 +466,13 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       }
       #endif
 
-//      driveSignal.write(driveNeutral);
-//      steeringSignal.write(steeringNeutral);
+      WheelServo1 = 4096;
+      WheelServo2 = 4096; 
       isDriveMotorStopped = true;
       
     } else if (!myPS3->PS3NavigationConnected) {
-//      driveSignal.write(driveNeutral);
-//      steeringSignal.write(steeringNeutral);
+      WheelServo1 = 4096;
+      WheelServo2 = 4096; 
       isDriveMotorStopped = true;
 
     } else {
@@ -444,9 +481,7 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
 
       Steerpos = map(stickX, 0, 255, -155, 155);
       Wheel1pos = map(stickY, 255, 0, 190, 500);
-      Wheel2pos = map(stickY, 255, 0, 500, 182);
-//      headValue = map(stickY, 0, 255, HEAD_BAR_SERVO_MIN, HEAD_BAR_SERVO_MAX);
-
+      Wheel2pos = map(stickY, 255, 0, 500, 190);
 
       //Create Steeradjust / SteerState value
       if (Steerpos > 3) {
@@ -490,10 +525,10 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       WheelServo2 = CurrentWheel2;
 
       //kill wheel movement if centred (stops creep). 
-      if (CurrentWheel1 > 325 && CurrentWheel1 < 350) {
+      if (CurrentWheel1 > 325 && CurrentWheel1 < 355) {
             WheelServo1 = 4096;     
           }
-      if (CurrentWheel2 > 325 && CurrentWheel2 < 350) {
+      if (CurrentWheel2 > 325 && CurrentWheel2 < 355) {
             WheelServo2 = 4096;   
           }
       
@@ -505,16 +540,16 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       }
       else if (CurrentWheel1 < 325 && CurrentWheel2>345) {
         DirectionState=2;
-        headValue = 140;
+        headValue = 120;
       }
-      else if (CurrentWheel1>325 && CurrentWheel1<350 && CurrentWheel2>325 && CurrentWheel2<350) {
+      else if (CurrentWheel1>325 && CurrentWheel1<355 && CurrentWheel2>325 && CurrentWheel2<355) {
         DirectionState=0;
         headValue = 90;
       }
       
       //Steering modifier
       
-      if (CurrentWheel1>325 && CurrentWheel1<350 && CurrentWheel2>325 && CurrentWheel2<350 && (Steerpos > 20 || Steerpos < 0)) {
+      if (CurrentWheel1>325 && CurrentWheel1<355 && CurrentWheel2>325 && CurrentWheel2<355 && (Steerpos > 20 || Steerpos < 0)) {
       
         WheelServo1 = CurrentWheel1+(-Steerpos / 3);
         WheelServo2 = CurrentWheel2+(-Steerpos / 3);
@@ -553,9 +588,7 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
 //      Serial.print (WheelServo1);     
 //      Serial.print (" WheelServo2: ");
 //      Serial.print (WheelServo2); 
-
-        Serial.print(headValue);
-        Serial.print ("\r\n");
+//      Serial.print ("\r\n");
 
 
       if (headBarServoEaser.hasArrived() ) {
@@ -567,7 +600,6 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       pwm.setPWM(0, 0, WheelServo1);
       pwm.setPWM(1, 0, WheelServo2);
 
-//      servos.moveTo(2, 10, headValue);
       return true; //we sent a drive command
     }
   }
@@ -646,17 +678,10 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Scream\r\n";
 #endif
-
-
-
-#ifdef Sparkfun
-        MP3.trigger(1);
-#endif
-
-
-
-
+        musicPlayer.playFullFile("track001.mp3");
+        
         break;
+        
       case '2':
 #ifdef SHADOW_DEBUG
         output += "Sound Button ";
@@ -664,12 +689,8 @@ void processSoundCommand(char soundCommand)
         output += " - Play Doo Doo.\r\n";
 #endif
 
-
-#ifdef Sparkfun
-        MP3.trigger(2);
-#endif
-
         break;
+        
       case '3':
 #ifdef SHADOW_DEBUG
         output += "Sound Button ";
@@ -677,11 +698,8 @@ void processSoundCommand(char soundCommand)
         output += " - Play Scramble\r\n";
 #endif
 
-#ifdef Sparkfun
-        MP3.trigger(3);
-#endif
-
         break;
+        
         case '4':
 #ifdef SHADOW_DEBUG
         output += "Sound Button ";
@@ -689,11 +707,8 @@ void processSoundCommand(char soundCommand)
         output += " - Play Scramble\r\n";
 #endif
 
-#ifdef Sparkfun
-        MP3.trigger(4);
-#endif
-
         break;
+        
       case '5':
 #ifdef SHADOW_DEBUG
         output += "Sound Button ";
@@ -701,11 +716,8 @@ void processSoundCommand(char soundCommand)
         output += " - Play Mouse Sound.\r\n";
 #endif
 
-#ifdef Sparkfun
-        MP3.trigger(5);
-#endif
-
         break;
+        
       case '6':
 #ifdef SHADOW_DEBUG
         output += "Sound Button ";
@@ -713,11 +725,8 @@ void processSoundCommand(char soundCommand)
         output += " - Play Crank Sound.\r\n";
 #endif
 
-#ifdef Sparkfun
-        MP3.trigger(6);
-#endif
-
         break;
+        
       case '7':
 #ifdef SHADOW_DEBUG
         output += "Sound Button ";
@@ -725,11 +734,8 @@ void processSoundCommand(char soundCommand)
         output += " - Play Splat.\r\n";
 #endif
 
-#ifdef Sparkfun
-        MP3.trigger(7);
-#endif
-
         break;
+        
       case '8':
 #ifdef SHADOW_DEBUG
         output += "Sound Button ";
@@ -737,11 +743,8 @@ void processSoundCommand(char soundCommand)
         output += " - Play Electrical.\r\n";
 #endif
 
-#ifdef Sparkfun
-        MP3.trigger(15);
-#endif
-
         break;
+        
       case '9':
 #ifdef SHADOW_DEBUG
         output += "Sound Button ";
@@ -916,7 +919,6 @@ void processSoundCommand(char soundCommand)
     if (PS3Nav->PS3NavigationConnected) ps3soundControl(PS3Nav, 1);
     if (PS3Nav2->PS3NavigationConnected) ps3soundControl(PS3Nav2, 2);
   }
-
 #ifdef TEST_CONROLLER
   void testPS3Controller(PS3BT* myPS3 = PS3Nav)
   {
