@@ -3,14 +3,22 @@
 // =======================================================================================
 //                 SHAD-0W :  Small Handheld Arduino D-0 Wand
 // =======================================================================================
-//                          Last Revised Date: 10/14/2019
-//                                Version: 0.4
+//                          Last Revised Date: 10/04/2019
+//                                Version: 0.3
 //                             Written By: jonhaag
 //               Inspired by the SHADOW by KnightShade & PADAWAN by danf
 //                    Movement code based on work by MrBaddeley
 //                 Designed to work on v1.0 of MrBaddeley's D-0 files
 //                            
 // =======================================================================================
+//                              Revision History/Notes
+// =======================================================================================
+// v0.3 - Disabled headBar & soundboard start up; added dome automation on/off with L1+O/X
+//
+//
+//
+//
+// ======================================================================================
 //
 //         This program is free software: you can redistribute it and/or modify it .
 //         This program is distributed in the hope that it will be useful,
@@ -22,10 +30,9 @@
 //
 //   This is written to be a UNIVERSAL Sketch - supporting multiple controller options
 //      - Single PS3 Move Navigation
-//      - Pair of PS3 Move Navigation
+//      - Pair of PS3 Move Navigation - to be added later
 //
 //   PS3 Bluetooth library - developed by Kristian Lauszus (kristianl@tkjelectronics.com)
-//   For more information visit my blog: http://blog.tkjelectronics.dk/ or
 //
 // =======================================================================================
 //
@@ -47,7 +54,7 @@ int drive2Neutral = 325; // Move this by one or two to set the center point for 
 //#define SHADOW_DEBUG           //uncomment this for console DEBUG output
 #define SHADOW_VERBOSE           //uncomment this for console VERBOSE output
 
-const int headBarServoPin = 5;
+const int headBarServoPin = 7;
 #define HEAD_BAR_SERVO_MIN 20
 #define HEAD_BAR_SERVO_MAX 160
 
@@ -121,6 +128,15 @@ Servo headBarServo;
   
 ServoEaser headBarServoEaser;
 
+Servo servo1; 
+Servo servo2;
+
+ServoEaser servoEaser1;
+ServoEaser servoEaser2;
+
+const int Headservo1Pin = 4;
+const int Headservo2Pin = 5;
+
 unsigned long lastMillis;
 
 int Wheel1;
@@ -139,6 +155,9 @@ unsigned long Drivetime_now = 0; // Drivetime current,
 int DirectionState = 0; // 0 for Stationary, 1 for forward, 2 for backwards
 int SteerState = 0; // 0 for Stationary, 1 for left, 2 for right
 int headValue; //will hold head bar values
+int HeadState = 0;
+int HeadTurn1;
+int HeadTurn2;
 
 int Wheel1pos = 0;    // variable to store the Wheel1 speed 
 int Wheel2pos = 0;    // variable to store the Wheel2 speed
@@ -187,7 +206,7 @@ void setup()
   // initialise the music player
   if (! musicPlayer.begin()) { // initialise the music player
      Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
-     while (1);
+    // while (1);
   }
   Serial.println(F("VS1053 found"));
 
@@ -198,7 +217,7 @@ void setup()
   musicPlayer.sineTest(0x44, 500);    // Make a tone to indicate VS1053 is working
     if (!SD.begin(CARDCS)) {
     Serial.println(F("SD failed, or not present"));
-    while (1);  // don't do anything more
+   // while (1);  // don't do anything more
   }
   Serial.println("SD OK!");
 
@@ -208,10 +227,23 @@ void setup()
    
   Serial.print(F("\r\nD-0 Drive Running"));
 
+  delay(10);
+
   //Initialize the Head Bar servo and move it into upright position if not already there
-  headBarServo.attach(headBarServoPin);
-  headBarServoEaser.begin(headBarServo, servoFrameMillis);
-  headBarServoEaser.easeTo(90,2000);
+  //headBarServo.attach(headBarServoPin);
+  //headBarServoEaser.begin(headBarServo, servoFrameMillis);
+  //headBarServoEaser.easeTo(90,2000);
+
+  servo1.attach( Headservo1Pin );
+  servo2.attach( Headservo2Pin );
+
+  servoEaser1.begin( servo1, servoFrameMillis );
+  servoEaser2.begin( servo2, servoFrameMillis );
+
+  servoEaser1.easeTo( 90, 2000);
+  servoEaser2.easeTo( 90, 2000);
+   
+  HeadState =0; 
 }
 
 boolean readUSB()
@@ -260,8 +292,38 @@ void loop()
     //We have a fault condition that we want to ensure that we do NOT process any controller data!!!
     return;
   }
-  headBarServoEaser.update();
+//  headBarServoEaser.update();
   
+servoEaser1.update();
+servoEaser2.update();
+
+
+if (HeadState == 0) {
+  if (servoEaser1.hasArrived() ) {
+      lastMillis = millis();
+      servoEaser1.easeTo( 90, 2000);
+  }
+    if (servoEaser1.hasArrived() ) {
+      lastMillis = millis();
+      servoEaser2.easeTo( 90, 2000);
+  }
+}
+
+if (HeadState == 1) {
+  if (servoEaser2.hasArrived() ) {
+ lastMillis = millis();
+    int angle    = random(30,150);
+    int duration = random(1000,1500); 
+    servoEaser2.easeTo( angle, duration );
+}
+
+if (servoEaser1.hasArrived() ) {
+ lastMillis = millis();
+    int angle    = random(70,110);
+    int duration = random(1000,1500); 
+    servoEaser1.easeTo( angle, duration );
+}
+}
   Drive();
 
   if ( !readUSB() )
@@ -591,10 +653,10 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
 //      Serial.print ("\r\n");
 
 
-      if (headBarServoEaser.hasArrived() ) {
-        lastMillis = millis();
-        headBarServoEaser.easeTo(headValue,1000); 
-      }
+//      if (headBarServoEaser.hasArrived() ) {
+//        lastMillis = millis();
+//        headBarServoEaser.easeTo(headValue,1000); 
+//      }
          
       
       pwm.setPWM(0, 0, WheelServo1);
@@ -615,10 +677,20 @@ void ps3ToggleSettings(PS3BT* myPS3 = PS3Nav)
     output += "\r\nDisconnecting the controller.\r\n";
     myPS3->disconnect();
   }
+  if(myPS3->getButtonPress(L1)&&myPS3->getButtonClick(CIRCLE))
+  {
+    HeadState = 1;
+    Serial.print ("HeadState = 1");
+  }
 
+   if(myPS3->getButtonPress(L1)&&myPS3->getButtonClick(CROSS))
+  {
+    HeadState = 0;
+    Serial.print ("HeadState = 0");
+  }
 
   //// enable / disable right stick & play sound
-  if (myPS3->getButtonPress(PS) && myPS3->getButtonClick(CROSS))
+  if (myPS3->getButtonClick(PS) && myPS3->getButtonClick(CROSS))
   {
 #ifdef SHADOW_DEBUG
     output += "Disiabling the DriveStick\r\n";
