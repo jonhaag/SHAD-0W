@@ -3,8 +3,8 @@
 // =======================================================================================
 //                 SHAD-0W :  Small Handheld Arduino D-0 Wand
 // =======================================================================================
-//                          Last Revised Date: 10/04/2019
-//                                Version: 0.3
+//                          Last Revised Date: 11/01/2019
+//                                Version: 0.4
 //                             Written By: jonhaag
 //               Inspired by the SHADOW by KnightShade & PADAWAN by danf
 //                    Movement code based on work by MrBaddeley
@@ -13,8 +13,8 @@
 // =======================================================================================
 //                              Revision History/Notes
 // =======================================================================================
-// v0.3 - Disabled headBar & soundboard start up; added dome automation on/off with L1+O/X
-//
+//v0.4 - Re-enabled sound & headBar automation; moved drive system on/off to L2+O/X
+//v0.3 - Disabled headBar & soundboard start up; added dome automation on/off with L1+O/X
 //
 //
 //
@@ -54,7 +54,7 @@ int drive2Neutral = 325; // Move this by one or two to set the center point for 
 //#define SHADOW_DEBUG           //uncomment this for console DEBUG output
 #define SHADOW_VERBOSE           //uncomment this for console VERBOSE output
 
-const int headBarServoPin = 7;
+
 #define HEAD_BAR_SERVO_MIN 20
 #define HEAD_BAR_SERVO_MAX 160
 
@@ -124,9 +124,15 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 int servoFrameMillis = 20;
 
-Servo headBarServo; 
-  
-ServoEaser headBarServoEaser;
+//Servo headBarServo; 
+//  
+//ServoEaser headBarServoEaser;
+
+const int HEAD_BAR_CENTER = 300;
+const int HEAD_BAR_FRONT = 200;
+const int HEAD_BAR_BACK = 400;
+
+const int NOD_BAR_CENTER = 290;
 
 Servo servo1; 
 Servo servo2;
@@ -134,7 +140,7 @@ Servo servo2;
 ServoEaser servoEaser1;
 ServoEaser servoEaser2;
 
-const int Headservo1Pin = 4;
+const int Headservo1Pin = 2;
 const int Headservo2Pin = 5;
 
 unsigned long lastMillis;
@@ -149,11 +155,18 @@ int Targetspeed1 = 0; //variable to store target speed
 int Targetspeed2 = 0; //variable to store target speed
 int CurrentWheel1 = 330;  // variable to store current speed for wheel 1
 int CurrentWheel2 = 340;  // variable to store current speed for wheel 2
+
+int WHEEL1_CENTER = 330;
+int WHEEL2_CENTER = 340;
+int DEADZONE = 20;
+
 int SpeedChange = 5;  // variable to store speed step change (lower, more lag / smoother)
 int DrivePeriod = 10; //increase speed every x milliseconds, (higher, more lag / smoother)
 unsigned long Drivetime_now = 0; // Drivetime current, 
+
 int DirectionState = 0; // 0 for Stationary, 1 for forward, 2 for backwards
 int SteerState = 0; // 0 for Stationary, 1 for left, 2 for right
+
 int headValue; //will hold head bar values
 int HeadState = 0;
 int HeadTurn1;
@@ -213,13 +226,15 @@ void setup()
     if (! musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
     Serial.println(F("DREQ pin is not an interrupt pin"));
   
-  musicPlayer.setVolume(60,60);
-  musicPlayer.sineTest(0x44, 500);    // Make a tone to indicate VS1053 is working
+  musicPlayer.setVolume(5,5);
+//  musicPlayer.playFullFile("/track001.mp3");
+  //musicPlayer.sineTest(0x44, 500);    // Make a tone to indicate VS1053 is working
     if (!SD.begin(CARDCS)) {
     Serial.println(F("SD failed, or not present"));
    // while (1);  // don't do anything more
   }
   Serial.println("SD OK!");
+  printDirectory(SD.open("/"), 0);
 
   pwm.begin();
   pwm.setPWMFreq(60);  // Analog servos run at ~60 Hz updates
@@ -244,6 +259,11 @@ void setup()
   servoEaser2.easeTo( 90, 2000);
    
   HeadState =0; 
+
+  pwm.setPWM(2, 0, HEAD_BAR_CENTER);
+  pwm.setPWM(3, 0, NOD_BAR_CENTER);
+
+  musicPlayer.playFullFile("track001.mp3");
 }
 
 boolean readUSB()
@@ -564,7 +584,7 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       }
 
       //Ramp up / Ramp down
-
+      
       Targetspeed1 = Wheel1pos;
       Targetspeed2 = Wheel2pos;
 
@@ -587,38 +607,38 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       WheelServo2 = CurrentWheel2;
 
       //kill wheel movement if centred (stops creep). 
-      if (CurrentWheel1 > 325 && CurrentWheel1 < 355) {
+      if (CurrentWheel1 > (WHEEL1_CENTER - DEADZONE) && CurrentWheel1 < (WHEEL1_CENTER + DEADZONE)) {
             WheelServo1 = 4096;     
           }
-      if (CurrentWheel2 > 325 && CurrentWheel2 < 355) {
+      if (CurrentWheel2 > (WHEEL2_CENTER - DEADZONE) && CurrentWheel2 < (WHEEL2_CENTER + DEADZONE)) {
             WheelServo2 = 4096;   
           }
       
       
       //Check directionstate and move head ready for movement. 
-      if (CurrentWheel1> 345 && CurrentWheel2<325) {
+      if (CurrentWheel1> (WHEEL1_CENTER + DEADZONE) && CurrentWheel2< (WHEEL2_CENTER - DEADZONE)) {
         DirectionState=1;
-        headValue = 30;
+        headValue = HEAD_BAR_FRONT;
       }
-      else if (CurrentWheel1 < 325 && CurrentWheel2>345) {
+      else if (CurrentWheel1 < (WHEEL1_CENTER - DEADZONE) && CurrentWheel2> (WHEEL2_CENTER + DEADZONE)) {
         DirectionState=2;
-        headValue = 120;
+        headValue = HEAD_BAR_BACK;
       }
-      else if (CurrentWheel1>325 && CurrentWheel1<355 && CurrentWheel2>325 && CurrentWheel2<355) {
+      else if (CurrentWheel1 > (WHEEL1_CENTER - DEADZONE) && CurrentWheel1 < (WHEEL1_CENTER + DEADZONE) && CurrentWheel2 > (WHEEL2_CENTER - DEADZONE) && CurrentWheel2 < (WHEEL2_CENTER + DEADZONE)) {
         DirectionState=0;
-        headValue = 90;
+        headValue = HEAD_BAR_CENTER;
       }
       
       //Steering modifier
       
-      if (CurrentWheel1>325 && CurrentWheel1<355 && CurrentWheel2>325 && CurrentWheel2<355 && (Steerpos > 20 || Steerpos < 0)) {
+      if (CurrentWheel1> (WHEEL1_CENTER - DEADZONE) && CurrentWheel1 < (WHEEL1_CENTER + DEADZONE) && CurrentWheel2 > (WHEEL2_CENTER - DEADZONE) && CurrentWheel2 < (WHEEL2_CENTER + DEADZONE) && (Steerpos > 20 || Steerpos < 0)) {
       
         WheelServo1 = CurrentWheel1+(-Steerpos / 3);
         WheelServo2 = CurrentWheel2+(-Steerpos / 3);
         
       }
       
-      else if ((CurrentWheel1<325 || CurrentWheel1>348) && (CurrentWheel2<325 || CurrentWheel2>348)){
+      else if ((CurrentWheel1 < (WHEEL1_CENTER - DEADZONE) || CurrentWheel1 > (WHEEL1_CENTER + DEADZONE)) && (CurrentWheel2 < (WHEEL2_CENTER - DEADZONE) || CurrentWheel2 >(WHEEL2_CENTER + DEADZONE))){
       
     
         
@@ -641,16 +661,16 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
         
       }
 
-//      Serial.print ("stickY: ");
-//      Serial.print (stickY);      Serial.print ("stickX: ");
-//      Serial.print (stickX);
-//      Serial.print (" Steerpos: ");
-//      Serial.print (Steerpos);
-//      Serial.print (" WheelServo1: ");
-//      Serial.print (WheelServo1);     
-//      Serial.print (" WheelServo2: ");
-//      Serial.print (WheelServo2); 
-//      Serial.print ("\r\n");
+      Serial.print ("stickY: ");
+      Serial.print (stickY);      Serial.print ("stickX: ");
+      Serial.print (stickX);
+      Serial.print (" Steerpos: ");
+      Serial.print (Steerpos);
+      Serial.print (" WheelServo1: ");
+      Serial.print (WheelServo1);     
+      Serial.print (" WheelServo2: ");
+      Serial.print (WheelServo2); 
+      Serial.print ("\r\n");
 
 
 //      if (headBarServoEaser.hasArrived() ) {
@@ -661,6 +681,9 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       
       pwm.setPWM(0, 0, WheelServo1);
       pwm.setPWM(1, 0, WheelServo2);
+      pwm.setPWM(2, 0, headValue);
+
+      
 
       return true; //we sent a drive command
     }
@@ -690,7 +713,7 @@ void ps3ToggleSettings(PS3BT* myPS3 = PS3Nav)
   }
 
   //// enable / disable right stick & play sound
-  if (myPS3->getButtonClick(PS) && myPS3->getButtonClick(CROSS))
+  if (myPS3->getButtonPress(L2) && myPS3->getButtonClick(CROSS))
   {
 #ifdef SHADOW_DEBUG
     output += "Disiabling the DriveStick\r\n";
@@ -698,7 +721,7 @@ void ps3ToggleSettings(PS3BT* myPS3 = PS3Nav)
     isStickEnabled = false;
     //        MP3.play(52);
   }
-  if (myPS3->getButtonPress(PS) && myPS3->getButtonClick(CIRCLE))
+  if (myPS3->getButtonPress(L2) && myPS3->getButtonClick(CIRCLE))
   {
 #ifdef SHADOW_DEBUG
     output += "Enabling the DriveStick\r\n";
@@ -760,7 +783,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Doo Doo.\r\n";
 #endif
-
+        musicPlayer.playFullFile("track002.mp3");
         break;
         
       case '3':
@@ -769,7 +792,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Scramble\r\n";
 #endif
-
+        musicPlayer.playFullFile("track003.mp3");
         break;
         
         case '4':
@@ -778,7 +801,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Scramble\r\n";
 #endif
-
+        musicPlayer.playFullFile("track004.mp3");
         break;
         
       case '5':
@@ -787,7 +810,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Mouse Sound.\r\n";
 #endif
-
+        musicPlayer.playFullFile("track005.mp3");
         break;
         
       case '6':
@@ -796,7 +819,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Crank Sound.\r\n";
 #endif
-
+        musicPlayer.playFullFile("track006.mp3");
         break;
         
       case '7':
@@ -805,7 +828,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Splat.\r\n";
 #endif
-
+        musicPlayer.playFullFile("track007.mp3");
         break;
         
       case '8':
@@ -1094,3 +1117,29 @@ void processSoundCommand(char soundCommand)
     }
   }
 #endif
+
+/// File listing helper
+void printDirectory(File dir, int numTabs) {
+   while(true) {
+     
+     File entry =  dir.openNextFile();
+     if (! entry) {
+       // no more files
+       //Serial.println("**nomorefiles**");
+       break;
+     }
+     for (uint8_t i=0; i<numTabs; i++) {
+       Serial.print('\t');
+     }
+     Serial.print(entry.name());
+     if (entry.isDirectory()) {
+       Serial.println("/");
+       printDirectory(entry, numTabs+1);
+     } else {
+       // files have sizes, directories do not
+       Serial.print("\t\t");
+       Serial.println(entry.size(), DEC);
+     }
+     entry.close();
+   }
+}
