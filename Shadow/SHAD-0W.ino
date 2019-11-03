@@ -128,11 +128,13 @@ int servoFrameMillis = 20;
 //  
 //ServoEaser headBarServoEaser;
 
-const int HEAD_BAR_CENTER = 300;
-const int HEAD_BAR_FRONT = 200;
-const int HEAD_BAR_BACK = 400;
+const int HEAD_BAR_CENTER = 290;
+const int HEAD_BAR_FRONT = HEAD_BAR_CENTER - 100;
+const int HEAD_BAR_BACK = HEAD_BAR_CENTER + 100;
 
-const int NOD_BAR_CENTER = 290;
+const int NOD_BAR_CENTER = 340;
+const int NOD_BAR_MAX = NOD_BAR_CENTER + 100;
+const int NOD_BAR_MIN = NOD_BAR_CENTER - 100;
 
 Servo servo1; 
 Servo servo2;
@@ -159,6 +161,7 @@ int CurrentWheel2 = 340;  // variable to store current speed for wheel 2
 int WHEEL1_CENTER = 330;
 int WHEEL2_CENTER = 340;
 int DEADZONE = 20;
+const int TURN_DEADZONE = 20;
 
 int SpeedChange = 5;  // variable to store speed step change (lower, more lag / smoother)
 int DrivePeriod = 10; //increase speed every x milliseconds, (higher, more lag / smoother)
@@ -263,7 +266,7 @@ void setup()
   pwm.setPWM(2, 0, HEAD_BAR_CENTER);
   pwm.setPWM(3, 0, NOD_BAR_CENTER);
 
-  musicPlayer.playFullFile("track001.mp3");
+  musicPlayer.playFullFile("track000.mp3");
 }
 
 boolean readUSB()
@@ -557,22 +560,22 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       WheelServo2 = 4096; 
       isDriveMotorStopped = true;
 
-    } else {
+    } else if (!(myPS3->getButtonPress(L1) || myPS3->getButtonPress(L2))) {
       int stickX = myPS3->getAnalogHat(LeftHatX);
       int stickY = myPS3->getAnalogHat(LeftHatY);
 
       Steerpos = map(stickX, 0, 255, -155, 155);
-      Wheel1pos = map(stickY, 255, 0, 190, 500);
+      Wheel1pos = map(stickY, 255, 0, 180, 490);
       Wheel2pos = map(stickY, 255, 0, 500, 190);
 
       //Create Steeradjust / SteerState value
-      if (Steerpos > 3) {
+      if (Steerpos > TURN_DEADZONE) {
         SteerState =1;
       }
-      else if (Steerpos <-3) {
+      else if (Steerpos <-TURN_DEADZONE) {
         SteerState =2;
       }
-      else if (Steerpos >-3 && Steerpos <3){
+      else if (Steerpos >-TURN_DEADZONE && Steerpos <TURN_DEADZONE){
         SteerState = 0;
       }
       
@@ -686,6 +689,20 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       
 
       return true; //we sent a drive command
+      
+    } else if (myPS3->getButtonPress(L2)) {
+      
+      int stickY = myPS3->getAnalogHat(LeftHatY);
+
+      headValue = map(stickY, 255, 0, 400, 200);
+      pwm.setPWM(2, 0, headValue);
+      
+    } else if (myPS3->getButtonPress(L1)) {
+      
+      int stickY = myPS3->getAnalogHat(LeftHatY);
+
+      headValue = map(stickY, 255, 0, NOD_BAR_MAX, NOD_BAR_MIN);
+      pwm.setPWM(3, 0, headValue);
     }
   }
   return false;
