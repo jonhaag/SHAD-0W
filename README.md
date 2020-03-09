@@ -1,4 +1,6 @@
-100% work in progress
+100% work in progress (which has been sidelined due to shifting to work on D-O v2 with IMU stabilization)
+
+Note: this code only works on v1 of Baddeley's D-O
 
 Link to expanded Top Frame (A) .stl for the Mega: https://www.dropbox.com/s/8htsof8qwyl0uft/TopFrameA%20%28Mega%29.stl?dl=0
 
